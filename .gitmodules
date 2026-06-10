@@ -1,0 +1,11 @@
+[submodule "third_party/vln-ce"]
+	path = third_party/vln-ce
+	url = https://github.com/jacobkrantz/VLN-CE.git
+	branch = master
+	ignore = dirty
+
+[submodule "third_party/smartway-code"]
+	path = third_party/smartway-code
+	url = https://github.com/sxyxs/SmartWay-Code.git
+	branch = master
+	ignore = dirty

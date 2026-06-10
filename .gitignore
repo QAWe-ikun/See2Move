@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Environments
+.env
+.venv/
+env/
+venv/
+
+# Large datasets and generated experiment outputs
+data/
+runs/
+logs/
+videos/
+rgb_images/
+tensorboard_dirs/
+checkpoints/
+
+# Model weights and binary artifacts
+*.pth
+*.pt
+*.ckpt
+*.onnx
+*.lmdb
+*.npz
+*.npy
+
+# Habitat / evaluation artifacts
+*.jsonl
+evaluation.log
+predictions.json
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
