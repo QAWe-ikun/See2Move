@@ -20,8 +20,7 @@ references and baselines, not as the final system.
 - `third_party/smartway-code`: SmartWay / Fast-SmartWay related baseline and
   waypoint-selection foundation.
 
-Local compatibility patches for third-party code are stored in
-`patches/third_party/`.
+These are tracked as Git submodules and should point to the project forks.
 
 ## Current Workspace
 
