@@ -1,4 +1,6 @@
-# WSL Reproduction
+# WSL Baselines
+
+These notes are for running third-party baselines used by See2Move.
 
 Workspace path in WSL:
 
@@ -6,7 +8,7 @@ Workspace path in WSL:
 cd /mnt/e/project/see2move
 ```
 
-Use `DATA_ROOT` if datasets are stored outside the repo:
+Set `DATA_ROOT` if datasets are outside the repo:
 
 ```bash
 export DATA_ROOT=/path/to/data
@@ -14,18 +16,13 @@ export DATA_ROOT=/path/to/data
 
 ## VLN-CE
 
-Runtime used by the upstream project:
+Reference runtime:
 
 - Python 3.6
 - Habitat-Sim 0.1.7
 - Habitat-Lab 0.1.7
 - R2R_VLNCE_v1-3_preprocessed
 - Matterport3D scenes
-
-Compatibility note:
-
-- `third_party/vln-ce/requirements.txt` pins `opencv-python-headless==4.5.5.64`.
-- PyTorch is installed by the upstream pip requirements; configure your network or pip mirror before installing.
 
 Run:
 
@@ -35,7 +32,7 @@ bash scripts/run_vlnce_waypoint_eval.sh
 
 ## SmartWay
 
-Runtime used by the upstream project:
+Reference runtime:
 
 - Python 3.8.20
 - PyTorch 2.1.1
@@ -46,7 +43,7 @@ Runtime used by the upstream project:
 - Matterport3D scenes
 - OpenAI API key
 
-Extra local assets expected by SmartWay:
+Extra assets:
 
 ```text
 third_party/smartway-code/ram_plus_swin_large_14m.pth
@@ -61,9 +58,7 @@ export OPENAI_API_KEY=...
 bash scripts/run_smartway_eval.sh
 ```
 
-## Data Check
-
-Before running either baseline:
+## Checks
 
 ```bash
 bash scripts/check_data_layout.sh
@@ -78,9 +73,3 @@ VLNCE_WPN_CKPT=/path/to/WPN.pth bash scripts/run_vlnce_waypoint_eval.sh
 SMARTWAY_SPLIT=val_unseen bash scripts/run_smartway_eval.sh
 SMARTWAY_EVAL_CKPT_PATH=/path/to/policy.pth bash scripts/run_smartway_eval.sh
 ```
-
-Notes:
-
-- Matterport3D requires separate access approval.
-- SmartWay downloads DINOv2 assets on first use.
-- SmartWay's API wrapper reads `OPENAI_API_KEY`.
