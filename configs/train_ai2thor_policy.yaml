@@ -1,0 +1,28 @@
+seed: 7
+candidate_actions:
+  - MoveAhead
+  - MoveBack
+  - MoveLeft
+  - MoveRight
+  - RotateLeft
+  - RotateRight
+  - LookUp
+  - LookDown
+data:
+  data_dir: data/ai2thor_oracle
+  records_path: data/ai2thor_oracle/records.jsonl
+  image_size: 128
+  max_depth: 5.0
+  max_text_len: 32
+  max_vocab_size: 4096
+  val_fraction: 0.2
+model:
+  text_dim: 64
+  hidden_dim: 128
+train:
+  output_dir: runs/ai2thor_policy
+  epochs: 10
+  batch_size: 16
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  num_workers: 0

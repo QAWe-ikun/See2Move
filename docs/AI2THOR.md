@@ -16,6 +16,9 @@ Install:
 pip install -r requirements-ai2thor.txt
 ```
 
+All generator, smoke-test, and training commands assume those dependencies are
+installed.
+
 Run:
 
 ```bash
@@ -31,8 +34,30 @@ data/ai2thor_oracle/
   000000_depth.npy
 ```
 
-`records.jsonl` contains the instruction, target object, camera pose,
+`records.jsonl` contains the instruction, target object, history, camera pose,
 candidate action scores, and selected label.
 
 This oracle is intentionally simple. Later versions should score operation
 regions, occlusion reduction, motion cost, and collision risk.
+
+## Training
+
+Train the policy on generated records:
+
+```bash
+pip install -r requirements-ai2thor.txt
+bash scripts/train_ai2thor_policy.sh
+```
+
+Evaluate:
+
+```bash
+bash scripts/evaluate_ai2thor_policy.sh
+```
+
+Smoke test without AI2-THOR:
+
+```bash
+bash scripts/make_smoke_ai2thor_dataset.sh
+bash scripts/train_ai2thor_policy.sh configs/train_ai2thor_smoke.yaml
+```

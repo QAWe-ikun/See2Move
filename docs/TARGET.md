@@ -49,3 +49,6 @@ Build a baseline loop:
 
 The first implementation uses AI2-THOR to generate oracle labels. See
 `docs/AI2THOR.md`.
+
+The current trainable policy is an RGB-D, language, and pose action classifier
+trained on AI2-THOR oracle records.

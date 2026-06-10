@@ -61,3 +61,9 @@ Generate the first See2Move oracle dataset:
 pip install -r requirements-ai2thor.txt
 bash scripts/generate_ai2thor_oracle.sh
 ```
+
+Train the main policy:
+
+```bash
+bash scripts/train_ai2thor_policy.sh
+```

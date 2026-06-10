@@ -143,6 +143,7 @@ def generate_dataset(cfg: Dict[str, Any]) -> None:
                         "object_type": target["objectType"],
                     },
                     "initial_visible_pixels": initial_visible_pixels,
+                    "history": [],
                     "rgb": rgb_file,
                     "depth": depth_file,
                     "agent": event.metadata["agent"],

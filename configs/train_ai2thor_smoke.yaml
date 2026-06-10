@@ -1,0 +1,23 @@
+seed: 7
+candidate_actions:
+  - MoveAhead
+  - RotateLeft
+  - RotateRight
+data:
+  data_dir: data/smoke_ai2thor
+  records_path: data/smoke_ai2thor/records.jsonl
+  image_size: 64
+  max_depth: 5.0
+  max_text_len: 32
+  max_vocab_size: 512
+  val_fraction: 0.25
+model:
+  text_dim: 32
+  hidden_dim: 64
+train:
+  output_dir: runs/smoke_ai2thor_policy
+  epochs: 2
+  batch_size: 4
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  num_workers: 0
