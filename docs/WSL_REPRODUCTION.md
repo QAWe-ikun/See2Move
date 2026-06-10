@@ -24,6 +24,13 @@ Reference runtime:
 - R2R_VLNCE_v1-3_preprocessed
 - Matterport3D scenes
 
+Build dependency:
+
+```bash
+sudo apt update
+sudo apt install -y build-essential libcrypt-dev
+```
+
 Run:
 
 ```bash

@@ -26,7 +26,9 @@ These are tracked as Git submodules and should point to the project forks.
 
 The repository currently contains:
 
+- See2Move data generation code in `see2move/`
 - baseline run scripts in `scripts/`
+- AI2-THOR data notes in `docs/AI2THOR.md`
 - WSL notes in `docs/WSL_REPRODUCTION.md`
 - project target notes in `docs/TARGET.md`
 - third-party baselines as Git submodules
@@ -51,4 +53,11 @@ bash scripts/run_vlnce_waypoint_eval.sh
 conda activate smartway
 export OPENAI_API_KEY=...
 bash scripts/run_smartway_eval.sh
+```
+
+Generate the first See2Move oracle dataset:
+
+```bash
+pip install -r requirements-ai2thor.txt
+bash scripts/generate_ai2thor_oracle.sh
 ```

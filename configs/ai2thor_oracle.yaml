@@ -1,0 +1,26 @@
+scene: FloorPlan1
+width: 300
+height: 300
+grid_size: 0.25
+rotate_step_degrees: 30
+horizon_step_degrees: 15
+max_episodes: 20
+output_dir: data/ai2thor_oracle
+candidate_actions:
+  - MoveAhead
+  - MoveBack
+  - MoveLeft
+  - MoveRight
+  - RotateLeft
+  - RotateRight
+  - LookUp
+  - LookDown
+target_object_types:
+  - Chair
+  - Table
+  - Sofa
+  - Cabinet
+  - CounterTop
+  - Shelf
+  - Bed
+  - Desk

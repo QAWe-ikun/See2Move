@@ -1,0 +1,4 @@
+ai2thor
+numpy
+pillow
+pyyaml

@@ -46,3 +46,6 @@ Build a baseline loop:
 3. Score candidates by visibility improvement, collision risk, and movement
    cost.
 4. Select the best next motion.
+
+The first implementation uses AI2-THOR to generate oracle labels. See
+`docs/AI2THOR.md`.
