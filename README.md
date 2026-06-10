@@ -1,28 +1,28 @@
 # See2Move
 
-See2Move is organized around two stages:
+See2Move is a reproduction workspace for RGB-D vision-language navigation
+baselines, with a later extension toward instruction-conditioned camera motion
+prediction.
 
-1. Reproduce existing continuous VLN baselines.
-2. Extend them into generalized occlusion-aware camera/viewpoint planning.
+## Baselines
 
-The current workspace vendors two reference implementations:
-
-- `third_party/vln-ce`: VLN-CE and waypoint VLN-CE baselines.
-- `third_party/smartway-code`: SmartWay zero-shot VLN-CE code, including an enhanced waypoint predictor and MLLM navigator.
+- `third_party/vln-ce`: VLN-CE and waypoint VLN-CE.
+- `third_party/smartway-code`: SmartWay / Fast-SmartWay related code path.
 
 These are tracked as Git submodules. Local compatibility changes are stored in
 `patches/third_party/`.
 
-## Target Problem
+## Extension Target
 
-The project target is not a table-specific heuristic. The intended task is:
+The extension task is:
 
 ```text
 instruction + current RGB view + depth/Z-buffer + camera pose + history
-    -> next camera motion or candidate viewpoint
+    -> next camera motion / candidate viewpoint
 ```
 
-The policy should move toward a viewpoint where the intended object, region, or manipulation affordance is visible and reachable. Examples include putting an item under a table, inspecting a shelf level, looking behind a sofa, placing an object inside a cabinet, or moving around any occluder that blocks a requested operation.
+The predicted motion should improve visibility of the object, region, or
+operation area referenced by the instruction.
 
 ## WSL Quickstart
 
@@ -46,20 +46,4 @@ export OPENAI_API_KEY=...
 bash scripts/run_smartway_eval.sh
 ```
 
-See `docs/WSL_REPRODUCTION.md` for the full dependency and data layout.
-The scripts `scripts/setup_vlnce_env_wsl.sh` and
-`scripts/setup_smartway_env_wsl.sh` are installation templates for WSL.
-
-## Extension Plan
-
-The generalized task design lives in:
-
-- `docs/GENERALIZED_OCCLUSION_VIEWPOINT.md`
-- `configs/occlusion_viewpoint.yaml`
-
-The first project-specific milestone should be an oracle data generator:
-
-1. Sample multiple candidate camera motions.
-2. Render RGB-D from each candidate in Habitat/AI2-THOR/Isaac/Blender.
-3. Score candidates by task-region visibility, occlusion reduction, collision risk, and motion cost.
-4. Train a policy to imitate the best candidate.
+See `docs/WSL_REPRODUCTION.md` for dependency and data layout notes.
