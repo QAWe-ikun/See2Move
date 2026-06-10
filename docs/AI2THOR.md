@@ -40,6 +40,32 @@ candidate action scores, and selected label.
 This oracle is intentionally simple. Later versions should score operation
 regions, occlusion reduction, motion cost, and collision risk.
 
+## Manual Exploration
+
+Browse an AI2-THOR room from the terminal:
+
+```bash
+bash scripts/explore_ai2thor_room.sh FloorPlan1
+```
+
+Controls:
+
+```text
+w/s/a/d  move
+j/l      rotate
+i/k      look up/down
+r        random reachable position
+o        list visible objects
+q        quit
+```
+
+Frames are saved after each action:
+
+```text
+runs/ai2thor_explorer/latest_rgb.png
+runs/ai2thor_explorer/latest_depth.png
+```
+
 ## Training
 
 Train the policy on generated records:

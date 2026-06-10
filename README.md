@@ -62,6 +62,12 @@ pip install -r requirements-ai2thor.txt
 bash scripts/generate_ai2thor_oracle.sh
 ```
 
+Explore an AI2-THOR room manually:
+
+```bash
+bash scripts/explore_ai2thor_room.sh FloorPlan1
+```
+
 Train the main policy:
 
 ```bash
