@@ -1,11 +1,19 @@
-scene: FloorPlan1
+seed: 7
+scenes:
+  - FloorPlan1-30
+  - FloorPlan201-230
+  - FloorPlan301-330
+  - FloorPlan401-430
 width: 300
 height: 300
 grid_size: 0.25
 rotate_step_degrees: 30
 horizon_step_degrees: 15
-max_episodes: 20
-output_dir: data/ai2thor_oracle
+target_records: 5000
+max_attempts: 60000
+samples_per_scene: 1
+resume: true
+output_dir: /mnt/f/see2move/data/ai2thor_oracle_10k_stay
 candidate_actions:
   - MoveAhead
   - MoveBack
@@ -15,12 +23,22 @@ candidate_actions:
   - RotateRight
   - LookUp
   - LookDown
+  - Stay
 target_object_types:
+  - ArmChair
+  - Bathtub
   - Chair
-  - Table
-  - Sofa
+  - CoffeeTable
   - Cabinet
   - CounterTop
-  - Shelf
   - Bed
+  - DiningTable
   - Desk
+  - Dresser
+  - Shelf
+  - SideTable
+  - Sink
+  - Sofa
+  - Stool
+  - Toilet
+  - TVStand

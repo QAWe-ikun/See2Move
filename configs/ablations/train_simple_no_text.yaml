@@ -18,24 +18,30 @@ data:
   max_vocab_size: 4096
   split_strategy: scene
   val_fraction: 0.2
+  ablation:
+    use_rgb: true
+    use_depth: true
+    use_text: false
+    use_pose: true
 model:
   architecture: simple
   text_dim: 64
   hidden_dim: 128
+  dropout: 0.1
 train:
-  output_dir: runs/ai2thor_policy_10k_stay_simple_e35
-  epochs: 35
+  output_dir: runs/ablations_10k_stay/simple_no_text
+  epochs: 30
   batch_size: 16
   learning_rate: 0.001
   scheduler: none
   min_learning_rate: 0.00005
   weight_decay: 0.0001
-  selection_metric: oracle_gain.positive_gain_rate
-  class_weighting: inverse_frequency
+  selection_metric: accuracy
+  class_weighting: none
   max_class_weight: 2.0
   soft_target_weight: 0.0
   soft_target_temperature: 2000.0
   gradient_clip_norm: 1.0
-  early_stopping_patience: 10
+  early_stopping_patience: 8
   early_stopping_min_delta: 0.0
   num_workers: 0

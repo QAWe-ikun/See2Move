@@ -13,13 +13,13 @@ env/
 venv/
 
 # Large datasets and generated experiment outputs
-data/
-runs/
-logs/
-videos/
-rgb_images/
-tensorboard_dirs/
-checkpoints/
+/data/
+/runs/
+/logs/
+/videos/
+/rgb_images/
+/tensorboard_dirs/
+/checkpoints/
 
 # Model weights and binary artifacts
 *.pth

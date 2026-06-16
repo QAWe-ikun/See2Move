@@ -29,6 +29,8 @@ The repository currently contains:
 - See2Move data generation code in `see2move/`
 - baseline run scripts in `scripts/`
 - AI2-THOR data notes in `docs/AI2THOR.md`
+- AI2-THOR experiment report in `docs/SEE2MOVE_REPORT.md`
+- AI2-THOR result tables in `docs/AI2THOR_RESULTS.md`
 - WSL notes in `docs/WSL_REPRODUCTION.md`
 - project target notes in `docs/TARGET.md`
 - third-party baselines as Git submodules

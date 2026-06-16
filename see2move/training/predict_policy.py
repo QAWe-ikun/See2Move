@@ -15,7 +15,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--record", type=Path, required=True)
-    parser.add_argument("--data-dir", type=Path, default=Path("data/ai2thor_oracle"))
+    parser.add_argument("--data-dir", type=Path, default=Path("/mnt/f/see2move/data/ai2thor_oracle_10k_stay"))
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = parser.parse_args()
 
@@ -31,6 +31,7 @@ def main() -> None:
         image_size=int(data_cfg.get("image_size", 128)),
         max_depth=float(data_cfg.get("max_depth", 5.0)),
         max_text_len=int(data_cfg.get("max_text_len", 32)),
+        ablation=data_cfg.get("ablation", config.get("ablation", {})),
     )
     batch = dataset[0]
     batch = {key: value.unsqueeze(0).to(args.device) for key, value in batch.items() if key != "label"}

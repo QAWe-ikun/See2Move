@@ -3,3 +3,8 @@ numpy
 pillow
 pyyaml
 torch
+torchvision
+tqdm
+accelerate
+safetensors
+transformers

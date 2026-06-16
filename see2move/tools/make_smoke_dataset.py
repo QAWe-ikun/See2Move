@@ -28,6 +28,7 @@ def make_record(sample_id: int, action: str) -> dict:
             {"action": "MoveAhead", "success": True, "visible_pixels": 120, "score": 20.0},
             {"action": "RotateLeft", "success": True, "visible_pixels": 90, "score": -10.0},
             {"action": "RotateRight", "success": True, "visible_pixels": 80, "score": -20.0},
+            {"action": "Stay", "success": True, "visible_pixels": 100 + sample_id, "score": 0.0},
         ],
         "label": action,
     }
@@ -41,7 +42,7 @@ def main() -> None:
     args = parser.parse_args()
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    actions = ["MoveAhead", "RotateLeft", "RotateRight"]
+    actions = ["MoveAhead", "RotateLeft", "RotateRight", "Stay"]
     rng = np.random.default_rng(7)
     records = []
     for sample_id in range(args.count):
