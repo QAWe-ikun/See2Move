@@ -21,6 +21,24 @@ def main() -> None:
     parser.add_argument("--data-dir", type=Path, default=Path("/mnt/f/see2move/data/ai2thor_oracle_10k_stay"))
     parser.add_argument("--qwen-features", type=Path, default=Path("/mnt/f/see2move/features/qwen3vl_ai2thor_oracle_10k_stay.pt"))
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    parser.add_argument(
+        "--stay-threshold",
+        type=float,
+        default=None,
+        help="Select Stay when every non-Stay predicted absolute gain is <= this raw score.",
+    )
+    parser.add_argument(
+        "--stay-ratio-threshold",
+        type=float,
+        default=None,
+        help="Select Stay when the best non-Stay predicted after/current visible-pixel ratio is <= this value.",
+    )
+    parser.add_argument(
+        "--stay-ratio-epsilon",
+        type=float,
+        default=1.0,
+        help="Minimum current visible pixels used as denominator for stay-ratio-threshold.",
+    )
     args = parser.parse_args()
 
     ckpt: Dict[str, Any] = torch.load(args.checkpoint, map_location="cpu")
@@ -49,7 +67,27 @@ def main() -> None:
     model.load_state_dict(ckpt["model_state"])
     model.to(args.device)
     idx_to_action = {idx: action for action, idx in action_vocab.items()}
-    print(json.dumps(evaluate(model, loader, args.device, idx_to_action), indent=2))
+    train_cfg = config.get("train", {})
+    print(
+        json.dumps(
+            evaluate(
+                model,
+                loader,
+                args.device,
+                idx_to_action,
+                objective=str(train_cfg.get("objective", "classification")),
+                score_scale=float(train_cfg.get("score_scale", 1000.0)),
+                score_loss_weight=float(train_cfg.get("score_loss_weight", 1.0)),
+                ranking_loss_weight=float(train_cfg.get("ranking_loss_weight", 0.5)),
+                ranking_margin=float(train_cfg.get("ranking_margin", 1.0)),
+                ce_loss_weight=float(train_cfg.get("ce_loss_weight", 0.1)),
+                stay_threshold=args.stay_threshold,
+                stay_ratio_threshold=args.stay_ratio_threshold,
+                stay_ratio_epsilon=args.stay_ratio_epsilon,
+            ),
+            indent=2,
+        )
+    )
 
 
 if __name__ == "__main__":

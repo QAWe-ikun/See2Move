@@ -354,6 +354,157 @@ class QwenGatedDepthPolicy(nn.Module):
         return self.head(fused * self.gate(fused))
 
 
+class QwenActionScoringPolicy(nn.Module):
+    def __init__(
+        self,
+        qwen_dim: int,
+        num_actions: int,
+        qwen_hidden_dim: int = 512,
+        depth_dim: int = 128,
+        pose_dim: int = 7,
+        pose_hidden_dim: int = 64,
+        fusion_dim: int = 512,
+        hidden_dim: int = 512,
+        dropout: float = 0.2,
+        modality_dropout: float = 0.0,
+    ) -> None:
+        super().__init__()
+        self.modality_dropout = modality_dropout
+        self.qwen_encoder = nn.Sequential(
+            nn.LayerNorm(qwen_dim),
+            nn.Linear(qwen_dim, qwen_hidden_dim),
+            nn.ReLU(inplace=True),
+            nn.Dropout(dropout),
+        )
+        self.depth_encoder = DepthFeatureEncoder(in_channels=3, output_dim=depth_dim)
+        self.pose_encoder = nn.Sequential(
+            nn.Linear(pose_dim, pose_hidden_dim),
+            nn.LayerNorm(pose_hidden_dim),
+            nn.ReLU(inplace=True),
+        )
+        input_dim = qwen_hidden_dim + depth_dim + pose_hidden_dim
+        self.gate = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.ReLU(inplace=True),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, input_dim),
+            nn.Sigmoid(),
+        )
+        self.fusion = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.LayerNorm(hidden_dim),
+            nn.ReLU(inplace=True),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, fusion_dim),
+            nn.LayerNorm(fusion_dim),
+            nn.ReLU(inplace=True),
+        )
+        self.head = ActionScoringHead(fusion_dim, num_actions, dropout=dropout)
+
+    def drop_modality(self, feature: torch.Tensor) -> torch.Tensor:
+        if not self.training or self.modality_dropout <= 0:
+            return feature
+        keep = torch.rand(feature.shape[0], 1, device=feature.device) >= self.modality_dropout
+        return feature * keep.to(feature.dtype)
+
+    def forward(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
+        qwen_feat = self.drop_modality(self.qwen_encoder(batch["qwen_feature"].float()))
+        depth_feat = self.drop_modality(self.depth_encoder(batch["depth"]))
+        pose_feat = self.drop_modality(self.pose_encoder(batch["pose"]))
+        fused = torch.cat([qwen_feat, depth_feat, pose_feat], dim=1)
+        fused = self.fusion(fused * self.gate(fused))
+        return self.head(fused)
+
+
+class GainScorePolicy(nn.Module):
+    def __init__(
+        self,
+        num_actions: int,
+        qwen_dim: int = 0,
+        qwen_hidden_dim: int = 512,
+        depth_dim: int = 128,
+        pose_dim: int = 7,
+        pose_hidden_dim: int = 64,
+        fusion_dim: int = 512,
+        hidden_dim: int = 512,
+        dropout: float = 0.2,
+        modality_dropout: float = 0.0,
+    ) -> None:
+        super().__init__()
+        self.use_qwen = qwen_dim > 0
+        self.modality_dropout = modality_dropout
+
+        input_dim = depth_dim + pose_hidden_dim
+        if self.use_qwen:
+            self.qwen_encoder = nn.Sequential(
+                nn.LayerNorm(qwen_dim),
+                nn.Linear(qwen_dim, qwen_hidden_dim),
+                nn.ReLU(inplace=True),
+                nn.Dropout(dropout),
+            )
+            input_dim += qwen_hidden_dim
+        else:
+            self.qwen_encoder = None
+
+        self.depth_encoder = DepthFeatureEncoder(in_channels=3, output_dim=depth_dim)
+        self.pose_encoder = nn.Sequential(
+            nn.Linear(pose_dim, pose_hidden_dim),
+            nn.LayerNorm(pose_hidden_dim),
+            nn.ReLU(inplace=True),
+        )
+        self.gate = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.ReLU(inplace=True),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, input_dim),
+            nn.Sigmoid(),
+        )
+        self.fusion = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.LayerNorm(hidden_dim),
+            nn.ReLU(inplace=True),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, fusion_dim),
+            nn.LayerNorm(fusion_dim),
+            nn.ReLU(inplace=True),
+        )
+        self.head = nn.Linear(fusion_dim, num_actions)
+
+    def drop_modality(self, feature: torch.Tensor) -> torch.Tensor:
+        if not self.training or self.modality_dropout <= 0:
+            return feature
+        keep = torch.rand(feature.shape[0], 1, device=feature.device) >= self.modality_dropout
+        return feature * keep.to(feature.dtype)
+
+    def forward(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
+        features = []
+        if self.use_qwen:
+            features.append(self.drop_modality(self.qwen_encoder(batch["qwen_feature"].float())))
+        features.append(self.drop_modality(self.depth_encoder(batch["depth"])))
+        features.append(self.drop_modality(self.pose_encoder(batch["pose"])))
+        fused = torch.cat(features, dim=1)
+        return self.head(self.fusion(fused * self.gate(fused)))
+
+
+def build_gain_score_model(
+    config: Dict[str, Any],
+    num_actions: int,
+    qwen_dim: int = 0,
+) -> nn.Module:
+    model_cfg = config.get("model", {})
+    return GainScorePolicy(
+        num_actions=num_actions,
+        qwen_dim=qwen_dim,
+        qwen_hidden_dim=int(model_cfg.get("qwen_hidden_dim", 512)),
+        depth_dim=int(model_cfg.get("depth_dim", 128)),
+        pose_hidden_dim=int(model_cfg.get("pose_hidden_dim", 64)),
+        fusion_dim=int(model_cfg.get("fusion_dim", 512)),
+        hidden_dim=int(model_cfg.get("hidden_dim", 512)),
+        dropout=float(model_cfg.get("dropout", 0.2)),
+        modality_dropout=float(model_cfg.get("modality_dropout", 0.0)),
+    )
+
+
 def build_qwen_model(config: Dict[str, Any], qwen_dim: int, num_actions: int) -> nn.Module:
     model_cfg = config.get("model", {})
     architecture = str(model_cfg.get("architecture", "concat"))
@@ -372,6 +523,18 @@ def build_qwen_model(config: Dict[str, Any], qwen_dim: int, num_actions: int) ->
         return QwenGatedDepthPolicy(
             **kwargs,
             modality_dropout=float(model_cfg.get("modality_dropout", 0.0)),
+        )
+    if architecture in {"action_scoring", "scoring"}:
+        return QwenActionScoringPolicy(
+            **kwargs,
+            fusion_dim=int(model_cfg.get("fusion_dim", 512)),
+            modality_dropout=float(model_cfg.get("modality_dropout", 0.0)),
+        )
+    if architecture in {"gain_score", "score_regression"}:
+        return build_gain_score_model(
+            config,
+            num_actions=num_actions,
+            qwen_dim=qwen_dim,
         )
     raise ValueError(f"Unsupported Qwen architecture: {architecture}")
 

@@ -110,6 +110,8 @@ def update_oracle_score_metrics(
     score_metrics["predicted_score_sum"] += float(predicted_scores.sum().item())
     score_metrics["best_score_sum"] += float(best_scores.sum().item())
     score_metrics["positive_gain_count"] += float((predicted_scores > 0).sum().item())
+    score_metrics["nonnegative_gain_count"] += float((predicted_scores >= 0).sum().item())
+    score_metrics["negative_gain_count"] += float((predicted_scores < 0).sum().item())
     score_metrics["best_positive_gain_count"] += float(positive_best.sum().item())
     if bool(positive_best.any()):
         ratio = predicted_scores[positive_best] / best_scores[positive_best].clamp_min(1.0)
@@ -176,6 +178,8 @@ def classification_metrics(
             "mean_predicted_score": score_metrics["predicted_score_sum"] / score_count,
             "mean_best_score": score_metrics["best_score_sum"] / score_count,
             "positive_gain_rate": score_metrics["positive_gain_count"] / score_count,
+            "nonnegative_gain_rate": score_metrics["nonnegative_gain_count"] / score_count,
+            "negative_gain_rate": score_metrics["negative_gain_count"] / score_count,
             "best_positive_gain_rate": score_metrics["best_positive_gain_count"] / score_count,
             "mean_gain_ratio_when_best_positive": score_metrics["gain_ratio_sum"] / ratio_count,
         }
@@ -186,6 +190,12 @@ def classification_metrics(
             metrics["oracle_gain"]["mean_best_relative_gain"] = (
                 score_metrics["relative_best_gain_sum"] / score_count
             )
+        metrics["balanced_gain_score"] = 0.5 * metrics["macro_f1"] + 0.5 * metrics["oracle_gain"]["positive_gain_rate"]
+        metrics["safe_balanced_gain_score"] = (
+            0.4 * metrics["macro_f1"]
+            + 0.4 * metrics["oracle_gain"]["positive_gain_rate"]
+            + 0.2 * metrics["oracle_gain"]["nonnegative_gain_rate"]
+        )
     return metrics
 
 
@@ -195,6 +205,8 @@ def empty_oracle_score_metrics() -> Dict[str, float]:
         "predicted_score_sum": 0.0,
         "best_score_sum": 0.0,
         "positive_gain_count": 0.0,
+        "nonnegative_gain_count": 0.0,
+        "negative_gain_count": 0.0,
         "best_positive_gain_count": 0.0,
         "gain_ratio_sum": 0.0,
         "gain_ratio_count": 0.0,
@@ -226,6 +238,42 @@ def build_class_weights(
     return torch.tensor(weights, dtype=torch.float32, device=device)
 
 
+def build_balanced_sampler(
+    records: List[Dict[str, Any]],
+    action_vocab: Dict[str, int],
+) -> Any:
+    import torch
+    from torch.utils.data import WeightedRandomSampler
+
+    counts = Counter(record["label"] for record in records)
+    weights = [
+        1.0 / max(1, counts.get(record["label"], 0))
+        for record in records
+        if record.get("label") in action_vocab
+    ]
+    return WeightedRandomSampler(
+        torch.tensor(weights, dtype=torch.double),
+        num_samples=len(weights),
+        replacement=True,
+    )
+
+
+def supervised_classification_loss(
+    logits: Any,
+    labels: Any,
+    class_weights: Any,
+    focal_gamma: float,
+) -> Any:
+    import torch
+    import torch.nn.functional as F
+
+    ce = F.cross_entropy(logits, labels, weight=class_weights, reduction="none")
+    if focal_gamma > 0:
+        pt = torch.exp(-ce.detach()).clamp(1.0e-6, 1.0)
+        ce = ((1.0 - pt) ** focal_gamma) * ce
+    return ce.mean()
+
+
 def oracle_soft_target_loss(
     logits: Any,
     batch: Dict[str, Any],
@@ -252,11 +300,136 @@ def oracle_soft_target_loss(
     )
 
 
+def gain_score_regression_loss(
+    predictions: Any,
+    batch: Dict[str, Any],
+    score_scale: float,
+) -> Any:
+    import torch.nn.functional as F
+
+    mask = batch["candidate_mask"] > 0
+    if not bool(mask.any()):
+        return predictions.new_tensor(0.0)
+    target = batch["candidate_scores"] / max(score_scale, 1.0e-6)
+    return F.smooth_l1_loss(predictions[mask], target[mask], reduction="mean")
+
+
+def gain_ranking_loss(
+    predictions: Any,
+    batch: Dict[str, Any],
+    score_scale: float,
+    margin: float,
+) -> Any:
+    import torch
+    import torch.nn.functional as F
+
+    scores = batch["candidate_scores"]
+    mask = batch["candidate_mask"] > 0
+    valid = mask.any(dim=1)
+    if not bool(valid.any()):
+        return predictions.new_tensor(0.0)
+
+    predictions = predictions[valid]
+    scores = scores[valid]
+    mask = mask[valid]
+    masked_scores = scores.masked_fill(~mask, -1.0e9)
+    best_idx = masked_scores.argmax(dim=1)
+    best_pred = predictions.gather(1, best_idx.unsqueeze(1))
+    target_gap = (masked_scores.gather(1, best_idx.unsqueeze(1)) - scores) / max(score_scale, 1.0e-6)
+    effective_margin = torch.clamp(target_gap, min=0.0, max=margin)
+    losses = F.relu(effective_margin - (best_pred - predictions))
+    losses = losses.masked_fill(~mask, 0.0)
+    losses.scatter_(1, best_idx.unsqueeze(1), 0.0)
+    denom = (mask.sum(dim=1) - 1).clamp_min(1).to(losses.dtype)
+    return (losses.sum(dim=1) / denom).mean()
+
+
+def gain_score_loss(
+    predictions: Any,
+    batch: Dict[str, Any],
+    score_scale: float,
+    score_loss_weight: float,
+    ranking_loss_weight: float,
+    ranking_margin: float,
+    ce_loss_weight: float,
+    class_weights: Any,
+    focal_gamma: float,
+) -> tuple[Any, Dict[str, float]]:
+    reg_loss = gain_score_regression_loss(predictions, batch, score_scale)
+    rank_loss = gain_ranking_loss(predictions, batch, score_scale, ranking_margin)
+    if ce_loss_weight > 0:
+        ce_loss = supervised_classification_loss(
+            predictions,
+            batch["label"],
+            class_weights,
+            focal_gamma,
+        )
+    else:
+        ce_loss = predictions.new_tensor(0.0)
+    loss = (
+        score_loss_weight * reg_loss
+        + ranking_loss_weight * rank_loss
+        + ce_loss_weight * ce_loss
+    )
+    return loss, {
+        "score_regression_loss": float(reg_loss.detach().cpu().item()),
+        "ranking_loss": float(rank_loss.detach().cpu().item()),
+        "ce_loss": float(ce_loss.detach().cpu().item()),
+    }
+
+
+def select_predictions(
+    logits: Any,
+    batch: Dict[str, Any],
+    idx_to_action: Dict[int, str],
+    objective: str,
+    score_scale: float,
+    stay_threshold: Optional[float],
+    stay_ratio_threshold: Optional[float],
+    stay_ratio_epsilon: float,
+) -> Any:
+    import torch
+
+    if objective != "gain_score" or (stay_threshold is None and stay_ratio_threshold is None):
+        return logits.argmax(dim=1)
+
+    stay_idx = None
+    for idx, action in idx_to_action.items():
+        if action == "Stay":
+            stay_idx = int(idx)
+            break
+    if stay_idx is None:
+        return logits.argmax(dim=1)
+
+    moving_scores = logits.clone()
+    moving_scores[:, stay_idx] = -torch.inf
+    best_moving_scores, best_moving_idx = moving_scores.max(dim=1)
+    if stay_ratio_threshold is not None and "initial_visible_pixels" in batch:
+        predicted_gain = best_moving_scores * float(score_scale)
+        base_pixels = batch["initial_visible_pixels"].to(predicted_gain.device).float()
+        predicted_ratio = (base_pixels + predicted_gain) / base_pixels.clamp_min(float(stay_ratio_epsilon))
+        choose_stay = predicted_ratio <= float(stay_ratio_threshold)
+    else:
+        scaled_threshold = float(stay_threshold) / max(score_scale, 1.0e-6)
+        choose_stay = best_moving_scores <= scaled_threshold
+    stay_pred = torch.full_like(best_moving_idx, stay_idx)
+    return torch.where(choose_stay, stay_pred, best_moving_idx)
+
+
 def evaluate(
     model: Any,
     loader: Any,
     device: str,
     idx_to_action: Optional[Dict[int, str]] = None,
+    objective: str = "classification",
+    score_scale: float = 1000.0,
+    score_loss_weight: float = 1.0,
+    ranking_loss_weight: float = 0.5,
+    ranking_margin: float = 1.0,
+    ce_loss_weight: float = 0.1,
+    stay_threshold: Optional[float] = None,
+    stay_ratio_threshold: Optional[float] = None,
+    stay_ratio_epsilon: float = 1.0,
 ) -> Dict[str, Any]:
     import torch
 
@@ -273,6 +446,9 @@ def evaluate(
     predicted_by_class = [0 for _ in range(num_actions)]
     topk_correct = {2: 0, 3: 0}
     score_metrics = empty_oracle_score_metrics()
+    score_loss_sum = 0.0
+    ranking_loss_sum = 0.0
+    ce_loss_sum = 0.0
     with torch.no_grad():
         for batch in loader:
             batch = move_batch(batch, device)
@@ -283,15 +459,41 @@ def evaluate(
                 correct_by_class = [0 for _ in range(num_actions)]
                 total_by_class = [0 for _ in range(num_actions)]
                 predicted_by_class = [0 for _ in range(num_actions)]
-            loss = criterion(logits, batch["label"])
+            if objective == "gain_score":
+                loss, loss_parts = gain_score_loss(
+                    logits,
+                    batch,
+                    score_scale=score_scale,
+                    score_loss_weight=score_loss_weight,
+                    ranking_loss_weight=ranking_loss_weight,
+                    ranking_margin=ranking_margin,
+                    ce_loss_weight=ce_loss_weight,
+                    class_weights=None,
+                    focal_gamma=0.0,
+                )
+                batch_count = int(batch["label"].numel())
+                score_loss_sum += loss_parts["score_regression_loss"] * batch_count
+                ranking_loss_sum += loss_parts["ranking_loss"] * batch_count
+                ce_loss_sum += loss_parts["ce_loss"] * batch_count
+            else:
+                loss = criterion(logits, batch["label"])
             loss_sum += float(loss.item()) * batch["label"].numel()
-            pred = logits.argmax(dim=1)
+            pred = select_predictions(
+                logits,
+                batch,
+                idx_to_action,
+                objective=objective,
+                score_scale=score_scale,
+                stay_threshold=stay_threshold,
+                stay_ratio_threshold=stay_ratio_threshold,
+                stay_ratio_epsilon=stay_ratio_epsilon,
+            )
             correct += int((pred == batch["label"]).sum().item())
             total += int(batch["label"].numel())
             update_class_counts(pred, batch["label"], correct_by_class, total_by_class, predicted_by_class)
             update_topk_counts(logits, batch["label"], topk_correct)
             update_oracle_score_metrics(pred, batch, score_metrics)
-    return classification_metrics(
+    metrics = classification_metrics(
         loss_sum,
         correct,
         total,
@@ -302,6 +504,19 @@ def evaluate(
         topk_correct,
         score_metrics,
     )
+    if objective == "gain_score":
+        metrics["objective"] = objective
+        metrics["score_regression_loss"] = score_loss_sum / max(1, total)
+        metrics["ranking_loss"] = ranking_loss_sum / max(1, total)
+        metrics["ce_loss"] = ce_loss_sum / max(1, total)
+    if stay_threshold is not None:
+        metrics["selection"] = {"stay_threshold": float(stay_threshold)}
+    if stay_ratio_threshold is not None:
+        metrics["selection"] = {
+            "stay_ratio_threshold": float(stay_ratio_threshold),
+            "stay_ratio_epsilon": float(stay_ratio_epsilon),
+        }
+    return metrics
 
 
 def train(config: Dict[str, Any]) -> None:
@@ -396,16 +611,24 @@ def train(config: Dict[str, Any]) -> None:
         )
     elif class_weighting != "none":
         raise ValueError(f"Unsupported class weighting: {class_weighting}")
-    criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
+    focal_gamma = float(train_cfg.get("focal_loss_gamma", 0.0))
     soft_target_weight = float(train_cfg.get("soft_target_weight", 0.0))
     soft_target_temperature = float(train_cfg.get("soft_target_temperature", 2000.0))
     gradient_clip_norm = train_cfg.get("gradient_clip_norm")
     gradient_clip_norm = float(gradient_clip_norm) if gradient_clip_norm is not None else None
 
+    sampler_name = str(train_cfg.get("sampler", "none"))
+    sampler = None
+    if sampler_name == "class_balanced":
+        sampler = build_balanced_sampler(train_records, action_vocab)
+    elif sampler_name != "none":
+        raise ValueError(f"Unsupported sampler: {sampler_name}")
+
     train_loader = DataLoader(
         train_dataset,
         batch_size=int(train_cfg.get("batch_size", 16)),
-        shuffle=True,
+        shuffle=sampler is None,
+        sampler=sampler,
         num_workers=int(train_cfg.get("num_workers", 0)),
     )
     val_loader = (
@@ -432,6 +655,17 @@ def train(config: Dict[str, Any]) -> None:
                             idx_to_action[idx]: float(class_weights[idx].detach().cpu().item())
                             for idx in range(len(idx_to_action))
                         },
+                    }
+                }
+            )
+        )
+    if sampler is not None or focal_gamma > 0:
+        print(
+            json.dumps(
+                {
+                    "imbalance": {
+                        "sampler": sampler_name,
+                        "focal_loss_gamma": focal_gamma,
                     }
                 }
             )
@@ -472,7 +706,12 @@ def train(config: Dict[str, Any]) -> None:
             batch = move_batch(batch, device)
             optimizer.zero_grad(set_to_none=True)
             logits = model(batch)
-            ce_loss = criterion(logits, batch["label"])
+            ce_loss = supervised_classification_loss(
+                logits,
+                batch["label"],
+                class_weights,
+                focal_gamma,
+            )
             soft_loss = logits.new_tensor(0.0)
             if soft_target_weight > 0:
                 soft_loss = oracle_soft_target_loss(

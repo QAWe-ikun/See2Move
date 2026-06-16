@@ -22,9 +22,11 @@ from see2move.data.ai2thor_records import (
 from see2move.models.policy import build_qwen_model
 from see2move.training.train_policy import (
     build_class_weights,
+    build_balanced_sampler,
     classification_metrics,
     empty_oracle_score_metrics,
     evaluate,
+    gain_score_loss,
     move_batch,
     oracle_soft_target_loss,
     set_seed,
@@ -32,6 +34,7 @@ from see2move.training.train_policy import (
     update_oracle_score_metrics,
     update_topk_counts,
     metric_value,
+    supervised_classification_loss,
 )
 
 
@@ -217,16 +220,32 @@ def train(config: Dict[str, Any]) -> None:
         )
     elif class_weighting != "none":
         raise ValueError(f"Unsupported class weighting: {class_weighting}")
-    criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
+    focal_gamma = float(train_cfg.get("focal_loss_gamma", 0.0))
     soft_target_weight = float(train_cfg.get("soft_target_weight", 0.0))
     soft_target_temperature = float(train_cfg.get("soft_target_temperature", 2000.0))
+    objective = str(train_cfg.get("objective", "classification"))
+    score_scale = float(train_cfg.get("score_scale", 1000.0))
+    score_loss_weight = float(train_cfg.get("score_loss_weight", 1.0))
+    ranking_loss_weight = float(train_cfg.get("ranking_loss_weight", 0.5))
+    ranking_margin = float(train_cfg.get("ranking_margin", 1.0))
+    ce_loss_weight = float(train_cfg.get("ce_loss_weight", 0.1))
+    if objective not in {"classification", "gain_score"}:
+        raise ValueError(f"Unsupported objective: {objective}")
     gradient_clip_norm = train_cfg.get("gradient_clip_norm")
     gradient_clip_norm = float(gradient_clip_norm) if gradient_clip_norm is not None else None
+
+    sampler_name = str(train_cfg.get("sampler", "none"))
+    sampler = None
+    if sampler_name == "class_balanced":
+        sampler = build_balanced_sampler(train_records, action_vocab)
+    elif sampler_name != "none":
+        raise ValueError(f"Unsupported sampler: {sampler_name}")
 
     train_loader = DataLoader(
         train_dataset,
         batch_size=int(train_cfg.get("batch_size", 64)),
-        shuffle=True,
+        shuffle=sampler is None,
+        sampler=sampler,
         num_workers=int(train_cfg.get("num_workers", 0)),
     )
     val_loader = (
@@ -243,6 +262,46 @@ def train(config: Dict[str, Any]) -> None:
     output_dir = Path(train_cfg.get("output_dir", "runs/ai2thor_qwen_policy"))
     output_dir.mkdir(parents=True, exist_ok=True)
     print(json.dumps({"split": split_info}))
+    if class_weights is not None:
+        print(
+            json.dumps(
+                {
+                    "loss": {
+                        "class_weighting": class_weighting,
+                        "class_weights": {
+                            idx_to_action[idx]: float(class_weights[idx].detach().cpu().item())
+                            for idx in range(len(idx_to_action))
+                        },
+                    }
+                }
+            )
+        )
+    if sampler is not None or focal_gamma > 0:
+        print(
+            json.dumps(
+                {
+                    "imbalance": {
+                        "sampler": sampler_name,
+                        "focal_loss_gamma": focal_gamma,
+                    }
+                }
+            )
+        )
+    if objective == "gain_score":
+        print(
+            json.dumps(
+                {
+                    "objective": {
+                        "name": objective,
+                        "score_scale": score_scale,
+                        "score_loss_weight": score_loss_weight,
+                        "ranking_loss_weight": ranking_loss_weight,
+                        "ranking_margin": ranking_margin,
+                        "ce_loss_weight": ce_loss_weight,
+                    }
+                }
+            )
+        )
 
     metrics = []
     selection_metric = str(train_cfg.get("selection_metric", "accuracy"))
@@ -260,6 +319,8 @@ def train(config: Dict[str, Any]) -> None:
         loss_sum = 0.0
         ce_loss_sum = 0.0
         soft_loss_sum = 0.0
+        score_loss_sum = 0.0
+        ranking_loss_sum = 0.0
         correct_by_class = [0 for _ in range(len(action_vocab))]
         total_by_class = [0 for _ in range(len(action_vocab))]
         predicted_by_class = [0 for _ in range(len(action_vocab))]
@@ -270,15 +331,41 @@ def train(config: Dict[str, Any]) -> None:
             batch = move_batch(batch, device)
             optimizer.zero_grad(set_to_none=True)
             logits = model(batch)
-            ce_loss = criterion(logits, batch["label"])
-            soft_loss = logits.new_tensor(0.0)
-            if soft_target_weight > 0:
-                soft_loss = oracle_soft_target_loss(
+            if objective == "gain_score":
+                loss, loss_parts = gain_score_loss(
                     logits,
                     batch,
-                    temperature=soft_target_temperature,
+                    score_scale=score_scale,
+                    score_loss_weight=score_loss_weight,
+                    ranking_loss_weight=ranking_loss_weight,
+                    ranking_margin=ranking_margin,
+                    ce_loss_weight=ce_loss_weight,
+                    class_weights=class_weights,
+                    focal_gamma=focal_gamma,
                 )
-            loss = ce_loss + soft_target_weight * soft_loss
+                ce_loss_value = loss_parts["ce_loss"]
+                soft_loss_value = 0.0
+                score_loss_value = loss_parts["score_regression_loss"]
+                ranking_loss_value = loss_parts["ranking_loss"]
+            else:
+                ce_loss = supervised_classification_loss(
+                    logits,
+                    batch["label"],
+                    class_weights,
+                    focal_gamma,
+                )
+                soft_loss = logits.new_tensor(0.0)
+                if soft_target_weight > 0:
+                    soft_loss = oracle_soft_target_loss(
+                        logits,
+                        batch,
+                        temperature=soft_target_temperature,
+                    )
+                loss = ce_loss + soft_target_weight * soft_loss
+                ce_loss_value = float(ce_loss.item())
+                soft_loss_value = float(soft_loss.item())
+                score_loss_value = 0.0
+                ranking_loss_value = 0.0
             loss.backward()
             if gradient_clip_norm is not None:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), gradient_clip_norm)
@@ -286,8 +373,10 @@ def train(config: Dict[str, Any]) -> None:
 
             batch_count = int(batch["label"].numel())
             loss_sum += float(loss.item()) * batch_count
-            ce_loss_sum += float(ce_loss.item()) * batch_count
-            soft_loss_sum += float(soft_loss.item()) * batch_count
+            ce_loss_sum += ce_loss_value * batch_count
+            soft_loss_sum += soft_loss_value * batch_count
+            score_loss_sum += score_loss_value * batch_count
+            ranking_loss_sum += ranking_loss_value * batch_count
             pred = logits.argmax(dim=1)
             correct += int((pred == batch["label"]).sum().item())
             total += batch_count
@@ -307,9 +396,28 @@ def train(config: Dict[str, Any]) -> None:
             score_metrics,
         )
         train_metrics["ce_loss"] = ce_loss_sum / max(1, total)
+        if objective == "gain_score":
+            train_metrics["objective"] = objective
+            train_metrics["score_regression_loss"] = score_loss_sum / max(1, total)
+            train_metrics["ranking_loss"] = ranking_loss_sum / max(1, total)
         if soft_target_weight > 0:
             train_metrics["soft_target_loss"] = soft_loss_sum / max(1, total)
-        val_metrics = evaluate(model, val_loader, device, idx_to_action) if val_loader is not None else {}
+        val_metrics = (
+            evaluate(
+                model,
+                val_loader,
+                device,
+                idx_to_action,
+                objective=objective,
+                score_scale=score_scale,
+                score_loss_weight=score_loss_weight,
+                ranking_loss_weight=ranking_loss_weight,
+                ranking_margin=ranking_margin,
+                ce_loss_weight=ce_loss_weight,
+            )
+            if val_loader is not None
+            else {}
+        )
         if scheduler is not None:
             scheduler.step()
 
