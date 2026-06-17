@@ -1,0 +1,97 @@
+body {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 32px 44px;
+  color: #171717;
+  font-family: "Noto Serif SC", "Microsoft YaHei", "SimSun", serif;
+  font-size: 12.5pt;
+  line-height: 1.68;
+}
+
+h1, h2, h3, h4 {
+  font-family: "Noto Sans SC", "Microsoft YaHei", "SimHei", sans-serif;
+  color: #111;
+  line-height: 1.35;
+  page-break-after: avoid;
+}
+
+h1 {
+  font-size: 24pt;
+  text-align: center;
+  margin: 16px 0 24px;
+}
+
+h2 {
+  font-size: 18pt;
+  border-bottom: 1px solid #ddd;
+  padding-bottom: 6px;
+  margin-top: 30px;
+}
+
+h3 {
+  font-size: 15pt;
+  margin-top: 24px;
+}
+
+h4 {
+  font-size: 13pt;
+  margin-top: 18px;
+}
+
+p {
+  text-align: justify;
+  margin: 8px 0;
+}
+
+img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 14px auto 22px;
+  page-break-inside: avoid;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 14px 0 20px;
+  font-size: 10pt;
+  page-break-inside: avoid;
+}
+
+th, td {
+  border: 1px solid #ccc;
+  padding: 5px 7px;
+  vertical-align: top;
+}
+
+th {
+  background: #f4f4f4;
+  font-weight: 700;
+}
+
+code {
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 0.92em;
+}
+
+pre {
+  background: #f7f7f7;
+  border: 1px solid #ddd;
+  padding: 10px 12px;
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
+}
+
+math {
+  font-size: 1.05em;
+}
+
+ol, ul {
+  padding-left: 1.6em;
+}
+
+@page {
+  size: A4;
+  margin: 18mm 16mm;
+}

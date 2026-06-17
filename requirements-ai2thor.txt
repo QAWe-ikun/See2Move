@@ -8,3 +8,5 @@ tqdm
 accelerate
 safetensors
 transformers
+imageio
+imageio-ffmpeg

@@ -48,8 +48,16 @@ def collect_predictions(
     model: Any,
     loader: Any,
     device: str,
+    idx_to_action: Dict[int, str],
+    objective: str,
+    score_scale: float,
+    stay_threshold: float | None,
+    stay_ratio_threshold: float | None,
+    stay_ratio_epsilon: float,
 ) -> tuple[List[int], List[int], List[int], List[float]]:
     import torch
+
+    from see2move.training.train_policy import select_predictions
 
     model.eval()
     labels: List[int] = []
@@ -60,7 +68,16 @@ def collect_predictions(
         for batch in loader:
             batch = {key: value.to(device) for key, value in batch.items()}
             logits = model(batch)
-            pred = logits.argmax(dim=1)
+            pred = select_predictions(
+                logits,
+                batch,
+                idx_to_action,
+                objective=objective,
+                score_scale=score_scale,
+                stay_threshold=stay_threshold,
+                stay_ratio_threshold=stay_ratio_threshold,
+                stay_ratio_epsilon=stay_ratio_epsilon,
+            )
             preds.extend(pred.detach().cpu().tolist())
             labels.extend(batch["label"].detach().cpu().tolist())
             if "record_id" in batch:
@@ -137,7 +154,18 @@ def analyze_simple(args: argparse.Namespace) -> Dict[str, Any]:
     model.load_state_dict(ckpt["model_state"])
     model.to(args.device)
     idx_to_action = {idx: action for action, idx in ckpt["action_vocab"].items()}
-    labels, preds, record_ids, predicted_scores = collect_predictions(model, loader, args.device)
+    train_cfg = config.get("train", {})
+    labels, preds, record_ids, predicted_scores = collect_predictions(
+        model,
+        loader,
+        args.device,
+        idx_to_action,
+        objective=str(train_cfg.get("objective", "classification")),
+        score_scale=float(train_cfg.get("score_scale", 1000.0)),
+        stay_threshold=args.stay_threshold,
+        stay_ratio_threshold=args.stay_ratio_threshold,
+        stay_ratio_epsilon=args.stay_ratio_epsilon,
+    )
     report = confusion_report(labels, preds, idx_to_action)
     if args.include_records:
         attach_record_predictions(
@@ -185,7 +213,18 @@ def analyze_qwen(args: argparse.Namespace) -> Dict[str, Any]:
     model.load_state_dict(ckpt["model_state"])
     model.to(args.device)
     idx_to_action = {idx: action for action, idx in action_vocab.items()}
-    labels, preds, record_ids, predicted_scores = collect_predictions(model, loader, args.device)
+    train_cfg = config.get("train", {})
+    labels, preds, record_ids, predicted_scores = collect_predictions(
+        model,
+        loader,
+        args.device,
+        idx_to_action,
+        objective=str(train_cfg.get("objective", "classification")),
+        score_scale=float(train_cfg.get("score_scale", 1000.0)),
+        stay_threshold=args.stay_threshold,
+        stay_ratio_threshold=args.stay_ratio_threshold,
+        stay_ratio_epsilon=args.stay_ratio_epsilon,
+    )
     report = confusion_report(labels, preds, idx_to_action)
     if args.include_records:
         attach_record_predictions(
@@ -211,6 +250,9 @@ def main() -> None:
     parser.add_argument("--include-records", action="store_true")
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--device", default="auto")
+    parser.add_argument("--stay-threshold", type=float, default=None)
+    parser.add_argument("--stay-ratio-threshold", type=float, default=None)
+    parser.add_argument("--stay-ratio-epsilon", type=float, default=1.0)
     args = parser.parse_args()
 
     import torch

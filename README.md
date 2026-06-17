@@ -75,3 +75,16 @@ Train the main policy:
 ```bash
 bash scripts/train_ai2thor_policy.sh
 ```
+
+Render a multi-case greedy rollout MP4 demo:
+
+```bash
+conda activate see2move
+bash scripts/record_qwen_greedy_rollout_demo.sh --steps 5 --max-cases 4
+```
+
+The video is written to:
+
+```text
+runs/qwen_greedy_rollout_demo/greedy_rollout_demo.mp4
+```

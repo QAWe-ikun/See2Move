@@ -172,7 +172,8 @@ def train(config: Dict[str, Any]) -> None:
     if not records:
         raise ValueError("No records found. Generate AI2-THOR data first.")
 
-    feature_payload = load_qwen_feature_payload(Path(data_cfg["qwen_features_path"]))
+    feature_path = data_cfg.get("feature_path") or data_cfg.get("features_path") or data_cfg["qwen_features_path"]
+    feature_payload = load_qwen_feature_payload(Path(feature_path))
     action_vocab = build_action_vocab(records, config.get("candidate_actions"))
     idx_to_action = {idx: action for action, idx in action_vocab.items()}
     train_records, val_records, split_info = split_for_training(records, config)

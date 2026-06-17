@@ -1,0 +1,52 @@
+seed: 7
+candidate_actions:
+  - MoveAhead
+  - MoveBack
+  - MoveLeft
+  - MoveRight
+  - RotateLeft
+  - RotateRight
+  - LookUp
+  - LookDown
+  - Stay
+data:
+  data_dir: /mnt/f/see2move/data/ai2thor_oracle_10k_stay
+  records_path: /mnt/f/see2move/data/ai2thor_oracle_10k_stay/records.jsonl
+  qwen_features_path: /mnt/f/see2move/features/qwen3vl_ai2thor_oracle_10k_stay.pt
+  image_size: 128
+  max_depth: 5.0
+  split_strategy: scene
+  val_fraction: 0.2
+model:
+  architecture: gain_score
+  qwen_hidden_dim: 512
+  depth_dim: 128
+  pose_hidden_dim: 64
+  fusion_dim: 512
+  hidden_dim: 512
+  dropout: 0.2
+  modality_dropout: 0.1
+train:
+  output_dir: runs/ablations_10k_stay/qwen_class_balanced
+  epochs: 25
+  batch_size: 64
+  learning_rate: 0.001
+  scheduler: cosine
+  min_learning_rate: 0.00005
+  weight_decay: 0.0005
+  selection_metric: oracle_gain.mean_predicted_score
+  objective: gain_score
+  score_scale: 1000.0
+  score_loss_weight: 1.0
+  ranking_loss_weight: 0.5
+  ranking_margin: 1.0
+  ce_loss_weight: 0.0
+  class_weighting: none
+  sampler: class_balanced
+  focal_loss_gamma: 0.0
+  soft_target_weight: 0.0
+  soft_target_temperature: 2000.0
+  gradient_clip_norm: 1.0
+  early_stopping_patience: 8
+  early_stopping_min_delta: 0.0
+  num_workers: 0
